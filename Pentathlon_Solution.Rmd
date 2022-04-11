@@ -1,0 +1,189 @@
+---
+title: 'Pentathlon Email Marketing'
+author: "Rainy Chen"
+date: "4/11/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(knitr)
+library(dplyr)
+library(pROC)
+```
+
+
+```{r}
+pentathlon = read.csv("pentathlon.csv")
+head(pentathlon)
+```
+
+```{r}
+##Part 1: ##Q1. For each customer(do the same for the remainder of the questions), determine the message (endurance, strength, water, team, back country, winter, or racquet)that is predicted to lead to the highest probability of purchase. Describe what approach you took to predict probability of purchase.
+train = pentathlon %>% filter(pentathlon$training == 1)
+test = pentathlon %>% filter(pentathlon$training == 0)
+representative = pentathlon %>% filter(pentathlon$representative == 1)
+logit1 = glm(buyer ~ message * (age + female + income + education + children +
+freq_endurance + freq_strength + freq_water + freq_team +
+freq_backcountry + freq_winter + freq_racquet),
+data = train, weights = sweight, family = "binomial")
+```
+
+```{r}
+summary(logit1)
+```
+
+```{r}
+pen_logit_probs <- predict.glm(logit1, newdata = test, type = "response")
+auc(test$buyer, pen_logit_probs)
+##AUC is 0.881
+```
+
+```{r}
+representative = representative %>% mutate(message_actual = message)
+representative <- representative %>% mutate(message = "endurance")
+representative$p_endurance <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(message = "strength")
+representative$p_strength <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(message = "water")
+representative$p_water <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(message = "team")
+representative$p_team <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(message = "backcountry")
+representative$p_backcountry <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(message = "winter")
+representative$p_winter <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(message = "racquet")
+representative$p_racquet <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% rowwise %>% mutate(p_max = max(p_endurance, p_strength,
+p_water, p_team, p_backcountry,
+p_winter, p_racquet)) %>% ungroup
+
+representative <- representative %>% mutate(message_target_prob = case_when(
+p_max == p_endurance ~ "endurance",
+p_max == p_strength ~ "strength",
+p_max == p_water ~ "water",
+p_max == p_team ~ "team",
+p_max == p_backcountry ~ "backcountry",
+p_max == p_winter ~ "winter",
+p_max == p_racquet ~ "racquet"))
+representative %>% select(p_endurance, p_strength, p_water, p_team,
+p_backcountry, p_winter, p_racquet, p_max)
+
+```
+
+We used interactions between messages and other variables to predict the probability of purchase. We want to customize message because we think that there might be an “interaction” between how effective an message is and who the customer is. Thus, the key point here is to interact messages with the variables that describe the customer.
+
+```{r}
+##Q2. For each message, report the percent of customers for whom that message maximizes their probability of purchase.
+highest_prob = representative %>%
+group_by(message_target_prob) %>%
+summarise(n_per_message = n()) %>%
+mutate(freq_message = n_per_message / sum(n_per_message)) %>%
+kable()
+highest_prob
+```
+
+```{r}
+##Q3 For each customer, determine the message (endurance, strength, water, team,backcountry, winter, or racquet) that is predicted to lead to the highest expected profit (the COGS is 60%).
+
+train.buyer <- train %>% filter(buyer==1)
+lm.order <-lm(total_os ~ message * (female +age+ income + education + children +
+freq_endurance + freq_strength + freq_water + freq_team +freq_backcountry + freq_winter + freq_racquet), data = train.buyer)
+```
+
+```{r}
+representative <- representative %>% mutate(message = "endurance")
+representative$os_endurance <- predict(lm.order, newdata=representative, type = "response")
+representative$profit_endurance <- representative$p_endurance*representative$os_endurance*0.4
+
+representative <- representative %>% mutate(message = "strength")
+representative$os_strength <- predict(lm.order, newdata=representative, type = "response")
+representative$profit_strength <- representative$p_strength*representative$os_strength*0.4 
+
+representative <- representative %>% mutate(message = "water")
+representative$os_water <- predict(lm.order, newdata=representative, type = "response")
+representative$profit_water <- representative$p_water*representative$os_water*0.4 
+
+representative <- representative %>% mutate(message = "team")
+representative$os_team <- predict(lm.order, newdata=representative, type = "response")
+representative$profit_team <- representative$p_team*representative$os_team*0.4 
+
+representative <- representative %>% mutate(message = "backcountry")
+representative$os_backcountry <- predict(lm.order, newdata=representative, type = "response")
+representative$profit_backcountry <- representative$p_backcountry*representative$os_backcountry*0.4 
+
+representative <- representative %>% mutate(message = "winter")
+representative$os_winter <- predict(lm.order, newdata=representative, type = "response")
+representative$profit_winter <- representative$p_winter*representative$os_winter*0.4 
+
+representative <- representative %>% mutate(message = "racquet")
+representative$os_racquet <- predict(lm.order, newdata=representative, type = "response")
+representative$profit_racquet <- representative$p_racquet*representative$os_racquet*0.4 
+```
+
+```{r}
+representative <- representative %>% rowwise %>% 
+  mutate(profit_max = max(profit_endurance, profit_strength, profit_water, profit_team, 
+                        profit_backcountry, profit_winter, profit_racquet)) %>% ungroup
+
+representative <- representative %>% mutate(message_target_profit = case_when(
+  profit_max == profit_endurance ~ "endurance",
+  profit_max == profit_strength ~ "strength",
+  profit_max == profit_water ~ "water",
+  profit_max == profit_team ~ "team",
+  profit_max == profit_backcountry ~ "backcountry",
+  profit_max == profit_winter ~ "winter",
+  profit_max == profit_racquet ~ "racquet"))
+```
+
+To predict the order size, we multiply order size of each message by its corresponding predicted purchase probability.
+As for expected profit,we multiply predicted order size by 1 minus the percentage of COGS = 0.4 to get the expected profit.
+
+
+```{r}
+##4 For each message, report the percent of customers for whom that message maximizes their expected profit.
+
+maximized_profit = representative %>% 
+  group_by(message_target_profit) %>%
+  summarise(n_per_message = n()) %>% 
+  mutate(freq_message = n_per_message / sum(n_per_message))%>% 
+  kable()
+maximized_profit
+```
+
+```{r}
+##5 What expected profit per email can we obtain on average from a customer if we customize the message to each customer?
+representative <- representative %>% rowwise %>%
+  mutate(profit_random = mean(cbind(profit_endurance, profit_strength, profit_water, profit_team, profit_backcountry, profit_winter, profit_racquet))) %>% ungroup
+representative %>% summarise(mean_profit_strength = mean(profit_strength),
+            mean_profit_backcountry = mean(profit_backcountry),
+            mean_profit__racquet = mean(profit_racquet),
+            mean_profit_winter = mean(profit_winter),
+            mean_profit_endurance = mean(profit_endurance),
+            mean_profit_water = mean(profit_water),
+            mean_profit_team = mean(profit_team),
+            mean_profit_random = mean(profit_random),
+            mean_profit_max_ep = mean(profit_max)) %>%
+  kable(digits = 3)
+```
+The expected profit per email on average is 0.214.
+
+##6 What expected profit per email can we obtain on average from a customer if every customer receives the same message from the Department of Water Sports?
+
+The expected profit per email on average from the Department of Water Sports is 0.172.
+
+##7 What expected profit per email can we obtain on average from a customer if every customer receives a message at random from one of the seven messages?
+The expected profit per email on random is 0.168.
+
+##8 What improvement (in percent) does Pentathlon obtain from customizing the message to each customer rather than assigning customers a message at random?
+0.214/0.168 = 27.4%
+
+#2 Read Anna’s draft for the new e-mail policy proposal carefully. Can you suggest at least one improvement?
+Instead of allocating half of all allowed messages for a customer to each of the two departments that with highest yields, allocate the messages in the ratio of predicted yields for the two departments. For example, the first customer in the representative sample (custid = 59) is predicted to yield 0.094 if they received a message from water sports or 0.086 if they received a message from endurance. In this case, we allocate $0.094 / (0.094 + 0.086) = 52\%$ of messages allowed to water sports and $0.086 / (0.094 + 0.086) = 48\%$ of messages allowed to endurance.
